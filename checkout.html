@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="pt-br" x-data="checkoutApp()" x-init="init()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EvoCRM Pro | Planos e Preços</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+
+    <style>
+        [x-cloak] { display: none !important; }
+        * { box-sizing: border-box; }
+        body { font-family: 'DM Sans', sans-serif; background: #07090f; color: #e8ecf4; }
+        .font-display { font-family: 'Syne', sans-serif; }
+
+        /* Noise texture */
+        body::before {
+            content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.025;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+
+        .orb1 { position: fixed; width: 700px; height: 700px; background: radial-gradient(circle, rgba(99,102,241,0.1) 0%, transparent 70%); top: -200px; left: -200px; pointer-events: none; z-index: 0; }
+        .orb2 { position: fixed; width: 500px; height: 500px; background: radial-gradient(circle, rgba(139,92,246,0.07) 0%, transparent 70%); bottom: -100px; right: -100px; pointer-events: none; z-index: 0; }
+
+        .card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 24px;
+            transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+            position: relative; overflow: hidden; cursor: pointer;
+        }
+        .card::before {
+            content: ''; position: absolute; inset: 0; border-radius: 24px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, transparent 60%);
+            opacity: 0; transition: opacity 0.3s;
+        }
+        .card:hover { border-color: rgba(255,255,255,0.13); transform: translateY(-4px); box-shadow: 0 24px 48px rgba(0,0,0,0.4); }
+        .card:hover::before { opacity: 1; }
+        .card.popular { border-color: rgba(99,102,241,0.35); background: rgba(99,102,241,0.05); }
+        .card.popular:hover { border-color: rgba(99,102,241,0.6); box-shadow: 0 24px 60px rgba(99,102,241,0.15); }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+            color: white; border: none; cursor: pointer; border-radius: 14px;
+            font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 0.03em;
+            transition: all 0.2s; box-shadow: 0 8px 30px rgba(99,102,241,0.3);
+            position: relative; overflow: hidden;
+        }
+        .btn-primary::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(255,255,255,0.1), transparent); }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(99,102,241,0.45); }
+        .btn-primary:active { transform: scale(0.97); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .input-field {
+            width: 100%; background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.09); border-radius: 12px;
+            padding: 13px 16px; color: #e8ecf4; font-family: 'DM Sans', sans-serif;
+            font-size: 14px; outline: none; transition: all 0.2s;
+        }
+        .input-field:focus { border-color: rgba(99,102,241,0.55); background: rgba(99,102,241,0.04); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+        .input-field::placeholder { color: #374151; }
+
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(16px); z-index: 100;
+            display: flex; align-items: center; justify-content: center; padding: 16px;
+        }
+        .modal-box {
+            background: #0c0e16; border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 24px; width: 100%; max-width: 460px;
+            max-height: 90vh; overflow-y: auto;
+        }
+
+        .tab-bar { display: flex; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 3px; }
+        .tab-btn { flex: 1; padding: 9px 16px; border: none; background: transparent; color: #6b7280; font-family: 'DM Sans', sans-serif; font-weight: 500; font-size: 13px; border-radius: 9px; cursor: pointer; transition: all 0.2s; }
+        .tab-btn.active { background: rgba(99,102,241,0.2); color: #a5b4fc; }
+
+        .spinner { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.2); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @keyframes fadeUp { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:translateY(0); } }
+        .fade-up { animation: fadeUp 0.6s ease both; }
+        .delay-1 { animation-delay: 0.1s; }
+        .delay-2 { animation-delay: 0.2s; }
+        .delay-3 { animation-delay: 0.3s; }
+        .delay-4 { animation-delay: 0.4s; }
+
+        @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+        .pulse-dot { animation: pulse-dot 2s ease infinite; }
+
+        .feature-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #9ca3af; }
+        .feature-row.on { color: #d1d5db; }
+        .feature-row.off { opacity: 0.35; }
+        .check-icon { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .check-icon.on { background: rgba(99,102,241,0.18); }
+        .check-icon.off { background: rgba(255,255,255,0.05); }
+
+        ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+        .success-ring { animation: ring-pulse 2s ease infinite; }
+        @keyframes ring-pulse { 0%,100%{transform:scale(1);opacity:0.5} 50%{transform:scale(1.15);opacity:0} }
+    </style>
+</head>
+<body class="min-h-screen antialiased" style="position:relative;">
+    <div class="orb1"></div>
+    <div class="orb2"></div>
+
+    <div style="position:relative;z-index:1;min-height:100vh;padding:48px 16px 80px;">
+
+        <!-- Header -->
+        <div class="text-center mb-16 fade-up" style="max-width:600px;margin-left:auto;margin-right:auto;">
+            <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.22);border-radius:999px;padding:5px 16px;margin-bottom:20px;">
+                <span class="pulse-dot" style="width:6px;height:6px;background:#6366f1;border-radius:50%;display:inline-block;"></span>
+                <span style="font-family:'Syne',sans-serif;font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#a5b4fc;">Sistema ativo 24/7</span>
+            </div>
+            <h1 style="font-family:'Syne',sans-serif;font-size:clamp(34px,6vw,58px);font-weight:800;line-height:1.05;margin-bottom:14px;letter-spacing:-0.02em;">
+                Escolha seu plano<br>
+                <span style="background:linear-gradient(135deg,#818cf8,#c4b5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">EvoCRM Pro</span>
+            </h1>
+            <p style="color:#6b7280;font-size:15px;line-height:1.7;max-width:400px;margin:0 auto;">
+                Automatize seu WhatsApp, gerencie leads e dispare mensagens em massa.
+            </p>
+        </div>
+
+        <!-- Billing toggle -->
+        <div class="fade-up delay-1" style="display:flex;justify-content:center;margin-bottom:44px;">
+            <div class="tab-bar" style="width:fit-content;">
+                <button class="tab-btn" :class="billing==='mensal'?'active':''" @click="billing='mensal'">Mensal</button>
+                <button class="tab-btn" :class="billing==='anual'?'active':''" @click="billing='anual'">
+                    Anual &nbsp;<span style="background:rgba(34,197,94,0.15);color:#4ade80;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;">−20%</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Plan cards -->
+        <div class="fade-up delay-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(278px,1fr));gap:20px;max-width:980px;margin:0 auto 48px;">
+            <template x-for="plano in planos" :key="plano.id">
+                <div class="card" :class="plano.popular ? 'popular' : ''" @click="abrirModal(plano)" style="padding:28px;">
+
+                    <!-- Popular badge -->
+                    <div x-show="plano.popular" style="position:absolute;top:18px;right:18px;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-family:'Syne',sans-serif;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:white;padding:4px 12px;border-radius:999px;">
+                        ⭐ Popular
+                    </div>
+
+                    <!-- Accent line -->
+                    <div style="height:3px;border-radius:2px;margin-bottom:20px;width:36px;" :style="'background:'+plano.cor"></div>
+
+                    <!-- Name & desc -->
+                    <div style="margin-bottom:20px;">
+                        <h3 style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:4px;" x-text="plano.nome"></h3>
+                        <p style="font-size:13px;color:#6b7280;" x-text="plano.descricao || plano.desc"></p>
+                    </div>
+
+                    <!-- Price -->
+                    <div style="margin-bottom:24px;">
+                        <div style="display:flex;align-items:baseline;gap:3px;">
+                            <span style="font-size:13px;color:#6b7280;font-weight:500;">R$</span>
+                            <span style="font-family:'Syne',sans-serif;font-size:46px;font-weight:800;line-height:1;" :style="'color:'+plano.cor" x-text="billing==='mensal' ? plano.preco_mensal : plano.preco_anual"></span>
+                            <span style="font-size:12px;color:#4b5563;">/mês</span>
+                        </div>
+                        <p x-show="billing==='anual'" style="font-size:11px;color:#4ade80;margin-top:3px;" x-text="'Cobrado R$ '+(plano.preco_anual*12)+'/ano'"></p>
+                    </div>
+
+                    <hr style="border:none;border-top:1px solid rgba(255,255,255,0.06);margin-bottom:20px;">
+
+                    <!-- Features -->
+                    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
+                        <template x-for="f in plano.features" :key="f.text">
+                            <div class="feature-row" :class="f.on ? 'on' : 'off'">
+                                <div class="check-icon" :class="f.on ? 'on' : 'off'">
+                                    <svg x-show="f.on" width="10" height="10" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" :stroke="plano.cor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
+                                    <svg x-show="!f.on" width="8" height="8" viewBox="0 0 8 8"><line x1="2" y1="2" x2="6" y2="6" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round"/><line x1="6" y1="2" x2="2" y2="6" stroke="#4b5563" stroke-width="1.5" stroke-linecap="round"/></svg>
+                                </div>
+                                <span x-text="f.text"></span>
+                            </div>
+                        </template>
+                    </div>
+
+                    <button class="btn-primary" style="width:100%;padding:14px;" @click.stop="abrirModal(plano)">
+                        Assinar <span x-text="plano.nome"></span> →
+                    </button>
+                </div>
+            </template>
+        </div>
+
+        <!-- Trust row -->
+        <div class="fade-up delay-3" style="display:flex;flex-wrap:wrap;justify-content:center;gap:28px;margin-bottom:20px;">
+            <template x-for="t in ['🔒 Pagamento seguro','⚡ Ativação imediata','↩️ Cancele quando quiser','💬 Suporte via WhatsApp']">
+                <span style="font-size:11px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:#374151;" x-text="t"></span>
+            </template>
+        </div>
+        <div class="fade-up delay-4" style="display:flex;justify-content:center;">
+            <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(0,167,107,0.08);border:1px solid rgba(0,167,107,0.2);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;color:#34d399;">
+                <svg width="16" height="16" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#00a650"/><path d="M8 16.5c0-4.4 3.6-8 8-8s8 3.6 8 8H8z" fill="white"/></svg>
+                Processado pelo Mercado Pago
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL DE CHECKOUT ===== -->
+    <div x-show="modalAberto" x-transition.opacity class="modal-overlay" x-cloak @click.self="fecharModal()">
+        <div class="modal-box" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100">
+
+            <!-- STEP: FORM -->
+            <div x-show="step === 'form'" style="padding:32px;">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;">
+                    <div>
+                        <p style="font-family:'Syne',sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#6366f1;margin-bottom:4px;">Finalizar assinatura</p>
+                        <h2 style="font-family:'Syne',sans-serif;font-size:22px;font-weight:800;" x-text="'Plano ' + (planoSelecionado?.nome || '')"></h2>
+                    </div>
+                    <div style="text-align:right;flex-shrink:0;margin-left:12px;">
+                        <p style="font-family:'Syne',sans-serif;font-size:30px;font-weight:800;color:#a5b4fc;" x-text="'R$ ' + (billing==='mensal' ? planoSelecionado?.preco_mensal : planoSelecionado?.preco_anual)"></p>
+                        <p style="font-size:11px;color:#374151;" x-text="billing==='anual' ? '/mês (anual)' : '/mês'"></p>
+                    </div>
+                </div>
+
+                <hr style="border:none;border-top:1px solid rgba(255,255,255,0.06);margin-bottom:24px;">
+
+                <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:24px;">
+                    <div>
+                        <label style="font-size:11px;font-weight:600;color:#6b7280;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Nome completo</label>
+                        <input class="input-field" x-model="form.nome" type="text" placeholder="João da Silva">
+                    </div>
+                    <div>
+                        <label style="font-size:11px;font-weight:600;color:#6b7280;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">E-mail</label>
+                        <input class="input-field" x-model="form.email" type="email" placeholder="joao@empresa.com">
+                    </div>
+                    <div>
+                        <label style="font-size:11px;font-weight:600;color:#6b7280;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">WhatsApp (com DDD)</label>
+                        <input class="input-field" x-model="form.whatsapp" type="tel" placeholder="(85) 99999-9999" @input="maskPhone($event)">
+                    </div>
+                    <div>
+                        <label style="font-size:11px;font-weight:600;color:#6b7280;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Nome da instância</label>
+                        <input class="input-field" x-model="form.instancia" type="text" placeholder="minha_empresa" @input="form.instancia = $event.target.value.toLowerCase().replace(/[^a-z0-9_]/g,'')">
+                        <p style="font-size:11px;color:#374151;margin-top:5px;">Sem espaços ou caracteres especiais. Ex: <b style="color:#6366f1;">minha_empresa</b></p>
+                    </div>
+                </div>
+
+                <p x-show="erroForm" x-text="erroForm" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:10px 14px;font-size:13px;color:#f87171;margin-bottom:16px;"></p>
+
+                <button class="btn-primary" style="width:100%;padding:16px;background:linear-gradient(135deg,#059669,#10b981);" @click="gerarPix()" :disabled="loading">
+                    <span x-show="!loading">🟢 Gerar PIX →</span>
+                    <span x-show="loading" style="display:flex;align-items:center;justify-content:center;gap:8px;"><span class="spinner"></span> Gerando PIX...</span>
+                </button>
+
+                <p style="text-align:center;margin-top:14px;font-size:11px;color:#374151;">Ao pagar você concorda com os Termos de Uso</p>
+            </div>
+
+            <!-- STEP: PIX -->
+            <div x-show="step === 'pix'" style="padding:28px;">
+                <div style="text-align:center;margin-bottom:20px;">
+                    <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.2);border-radius:999px;padding:5px 14px;margin-bottom:14px;">
+                        <span class="spinner" style="width:10px;height:10px;border-color:rgba(74,222,128,0.3);border-top-color:#4ade80;"></span>
+                        <span style="font-size:11px;font-weight:700;color:#4ade80;letter-spacing:0.08em;text-transform:uppercase;">Aguardando pagamento</span>
+                    </div>
+                    <h2 style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:4px;">Pague com PIX</h2>
+                    <p style="font-size:13px;color:#6b7280;">Ativação <b style="color:#4ade80;">imediata</b> após o pagamento.</p>
+                </div>
+
+                <!-- QR Code -->
+                <div style="display:flex;justify-content:center;margin-bottom:16px;">
+                    <div style="background:white;padding:10px;border-radius:16px;box-shadow:0 0 40px rgba(74,222,128,0.12);">
+                        <img :src="'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data='+encodeURIComponent(pixCopiaECola)"
+                             style="width:160px;height:160px;display:block;" alt="QR Code PIX">
+                    </div>
+                </div>
+
+                <!-- Valor -->
+                <div style="text-align:center;margin-bottom:14px;">
+                    <span style="font-family:'Syne',sans-serif;font-size:26px;font-weight:800;color:#4ade80;" x-text="'R$ '+Number(valorPix).toFixed(2).replace('.',',')"></span>
+                </div>
+
+                <!-- Copia e cola -->
+                <div style="margin-bottom:14px;">
+                    <p style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">PIX Copia e Cola</p>
+                    <div style="display:flex;gap:8px;align-items:stretch;">
+                        <div style="flex:1;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:10px 12px;font-family:monospace;font-size:10px;color:#a5b4fc;word-break:break-all;line-height:1.5;max-height:64px;overflow:hidden;" x-text="pixCopiaECola"></div>
+                        <button @click="copiarPix()" :style="pixCopiado ? 'background:rgba(74,222,128,0.15);border-color:rgba(74,222,128,0.4)' : 'background:rgba(99,102,241,0.12);border-color:rgba(99,102,241,0.25)'"
+                            style="flex-shrink:0;width:44px;border:1px solid;border-radius:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all 0.2s;">
+                            <svg x-show="!pixCopiado" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                            <svg x-show="pixCopiado" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>
+                        </button>
+                    </div>
+                    <p x-show="pixCopiado" style="font-size:11px;color:#4ade80;font-weight:600;margin-top:5px;text-align:center;">✓ Código copiado!</p>
+                </div>
+
+                <!-- Contador -->
+                <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                    <span style="font-size:12px;color:#6b7280;">Expira em</span>
+                    <span style="font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#fbbf24;" x-text="contadorPix"></span>
+                </div>
+
+                <button @click="fecharModal()" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,0.08);color:#6b7280;padding:11px;border-radius:12px;cursor:pointer;font-size:13px;">Cancelar</button>
+            </div>
+
+            <!-- STEP: SUCESSO -->
+            <div x-show="step === 'sucesso'" style="padding:48px 32px;text-align:center;">
+                <div style="position:relative;width:80px;height:80px;margin:0 auto 24px;">
+                    <div class="success-ring" style="position:absolute;inset:0;border-radius:50%;border:3px solid rgba(99,102,241,0.4);"></div>
+                    <div style="width:80px;height:80px;background:linear-gradient(135deg,#4f46e5,#6366f1);border-radius:50%;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;box-shadow:0 0 40px rgba(99,102,241,0.4);">
+                        <svg width="36" height="36" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+                    </div>
+                </div>
+                <h2 style="font-family:'Syne',sans-serif;font-size:28px;font-weight:800;margin-bottom:8px;">Pagamento Confirmado!</h2>
+                <p style="font-size:14px;color:#6b7280;margin-bottom:28px;line-height:1.6;">Seu plano foi ativado com sucesso. Agora vamos conectar seu WhatsApp.</p>
+                <button class="btn-primary" style="padding:15px 36px;font-size:15px;" @click="irParaConectar()">
+                    Conectar WhatsApp →
+                </button>
+                <p style="font-size:11px;color:#374151;margin-top:14px;" x-text="'Instância: ' + form.instancia"></p>
+            </div>
+
+            <!-- STEP: ERRO -->
+            <div x-show="step === 'erro'" style="padding:40px 32px;text-align:center;">
+                <div style="width:64px;height:64px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:28px;">❌</div>
+                <h2 style="font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:8px;">Ocorreu um Erro</h2>
+                <p style="font-size:14px;color:#6b7280;margin-bottom:24px;line-height:1.6;" x-text="erroMsg"></p>
+                <button class="btn-primary" style="padding:13px 32px;" @click="step='form'">Tentar Novamente</button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+    function checkoutApp() {
+        return {
+            // ============================================================
+            // ⚙️ CONFIGURAÇÕES
+            // ============================================================
+            SB_URL: 'https://qhnbisjogpdoyszpsucs.supabase.co',
+            SB_KEY: 'sb_publishable_3PAly_BCdvoldAzm1Y7SxQ_S3rp2QhQ',
+
+            // Access Token do Mercado Pago (produção)
+            MP_ACCESS_TOKEN: 'APP_USR-4945922373427150-030920-063f1ca49edd41e6f40ebf94b64bf573-544706758',
+
+            // URL do conectar.html (relativa ou absoluta)
+            CONECTAR_URL: 'conectar.html',
+
+            // Dias de acesso por billing
+            DIAS_MENSAL: 30,
+            DIAS_ANUAL: 365,
+
+            // ============================================================
+            // PLANOS — carregados do Supabase
+            // ============================================================
+            planos: [],
+
+            // ============================================================
+            // ESTADO
+            // ============================================================
+            sb: null,
+            billing: 'mensal',
+            modalAberto: false,
+            // URL do server.js rodando no Easypanel
+            // Após subir o server.js, coloque a URL aqui OU salve em admin_config → key: server_url
+            SERVER_URL: 'https://SEU_SERVER.easypanel.host', // ← trocar pela URL do seu server no Easypanel
+
+            planoSelecionado: null,
+            step: 'form',
+            loading: false,
+            erroForm: '',
+            erroMsg: '',
+            pedidoId: '',
+            pollTimer: null,
+            pixCopiaECola: '',
+            valorPix: 0,
+            pixCopiado: false,
+            contadorPix: '30:00',
+            contadorTimer: null,
+
+            form: { nome: '', email: '', whatsapp: '', instancia: '' },
+
+            // ============================================================
+            // INIT
+            // ============================================================
+            async init() {
+                this.sb = supabase.createClient(this.SB_URL, this.SB_KEY);
+
+                // Carrega URL do server do Supabase (admin_config)
+                try {
+                    const { data: svData } = await this.sb.from('admin_config').select('value').eq('key', 'server_url').single();
+                    if (svData?.value) this.SERVER_URL = svData.value;
+                } catch(e) {}
+
+                await this.carregarPlanos();
+
+                const params = new URLSearchParams(window.location.search);
+                const status = params.get('status');
+                const instancia = params.get('instancia') || sessionStorage.getItem('evo_instancia');
+                const pedido = params.get('pedido') || sessionStorage.getItem('evo_pedido');
+
+                if (status === 'approved' && instancia && pedido) {
+                    sessionStorage.removeItem('evo_instancia');
+                    sessionStorage.removeItem('evo_pedido');
+                    this.form.instancia = instancia;
+                    this.pedidoId = pedido;
+                    this.confirmarPagamentoUrl(pedido, instancia);
+                    window.history.replaceState({}, '', window.location.pathname);
+                } else if ((status === 'pending' || status === 'failure') && pedido) {
+                    sessionStorage.removeItem('evo_instancia');
+                    sessionStorage.removeItem('evo_pedido');
+                    this.form.instancia = instancia || '';
+                    this.pedidoId = pedido;
+                    // Abre modal mostrando status
+                    this.planoSelecionado = this.planos[0];
+                    this.modalAberto = true;
+                    if (status === 'pending') {
+                        this.step = 'aguardando';
+                        this.iniciarPolling(pedido, instancia);
+                    } else {
+                        this.erroMsg = 'O pagamento falhou ou foi cancelado. Tente novamente.';
+                        this.step = 'erro';
+                    }
+                    window.history.replaceState({}, '', window.location.pathname);
+                }
+            },
+
+            async carregarPlanos() {
+                try {
+                    const { data, error } = await this.sb
+                        .from('planos')
+                        .select('*')
+                        .order('ordem', { ascending: true });
+
+                    if (!error && data && data.length > 0) {
+                        this.planos = data;
+                    } else {
+                        // Fallback: planos padrão caso Supabase esteja vazio
+                        this.planos = [
+                            {
+                                id_slug: 'starter', nome: 'Starter', descricao: 'Para quem está começando',
+                                preco_mensal: 67, preco_anual: 54, cor: '#94a3b8', popular: false,
+                                features: [
+                                    { text: '1 número WhatsApp', on: true },
+                                    { text: 'Até 1.000 mensagens/mês', on: true },
+                                    { text: 'Disparo em massa', on: true },
+                                    { text: 'CRM de leads', on: true },
+                                    { text: 'Múltiplos atendentes', on: false },
+                                    { text: 'API de integração', on: false },
+                                ]
+                            },
+                            {
+                                id_slug: 'pro', nome: 'Pro', descricao: 'O mais escolhido',
+                                preco_mensal: 97, preco_anual: 78, cor: '#818cf8', popular: true,
+                                features: [
+                                    { text: '3 números WhatsApp', on: true },
+                                    { text: 'Mensagens ilimitadas', on: true },
+                                    { text: 'Disparo em massa', on: true },
+                                    { text: 'CRM de leads', on: true },
+                                    { text: 'Múltiplos atendentes', on: true },
+                                    { text: 'API de integração', on: true },
+                                ]
+                            },
+                            {
+                                id_slug: 'enterprise', nome: 'Enterprise', descricao: 'Para grandes times',
+                                preco_mensal: 197, preco_anual: 158, cor: '#c4b5fd', popular: false,
+                                features: [
+                                    { text: 'Números ilimitados', on: true },
+                                    { text: 'Mensagens ilimitadas', on: true },
+                                    { text: 'Disparo em massa', on: true },
+                                    { text: 'CRM de leads', on: true },
+                                    { text: 'Múltiplos atendentes', on: true },
+                                    { text: 'Relatórios avançados', on: true },
+                                ]
+                            },
+                        ];
+                    }
+                } catch(e) {
+                    console.error('Erro ao carregar planos:', e);
+                }
+            },
+
+            // ============================================================
+            // MODAL
+            // ============================================================
+            abrirModal(plano) {
+                this.planoSelecionado = plano;
+                this.step = 'form';
+                this.erroForm = '';
+                this.form = { nome: '', email: '', whatsapp: '', instancia: '' };
+                this.modalAberto = true;
+            },
+            fecharModal() {
+                this.modalAberto = false;
+                clearTimeout(this.pollTimer);
+            },
+
+            // ============================================================
+            // GERAR PIX — via n8n que chama API do PagSeguro
+            // ============================================================
+            async gerarPix() {
+                this.erroForm = '';
+                const { nome, email, whatsapp, instancia } = this.form;
+
+                if (!nome.trim() || !email.trim() || !whatsapp.trim() || !instancia.trim()) {
+                    this.erroForm = 'Preencha todos os campos.'; return;
+                }
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                    this.erroForm = 'E-mail inválido.'; return;
+                }
+                if (instancia.length < 3) {
+                    this.erroForm = 'Nome da instância muito curto.'; return;
+                }
+
+                this.loading = true;
+
+                try {
+                    const plano = this.planoSelecionado;
+                    const valor = this.billing === 'mensal' ? plano.preco_mensal : plano.preco_anual;
+                    const licenseKey = 'LIC-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+
+                    // 1. Salva pedido no Supabase como pending
+                    const { data: pedido, error: dbErr } = await this.sb.from('pagamentos').insert({
+                        nome: nome.trim(),
+                        email: email.trim(),
+                        whatsapp: whatsapp.replace(/\D/g,''),
+                        instancia: instancia.trim(),
+                        plano: plano.id_slug || plano.id,
+                        billing: this.billing,
+                        valor: valor,
+                        status: 'pending',
+                        license_key: licenseKey,
+                    }).select().single();
+
+                    if (dbErr) throw new Error('Erro ao salvar pedido: ' + dbErr.message);
+
+                    this.pedidoId = pedido.id;
+                    this.valorPix = valor;
+
+                    // 2. Chama server.js para gerar o PIX no PagSeguro
+                    const res = await fetch(this.SERVER_URL + '/gerar-pix', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            pedido_id: pedido.id,
+                            nome: nome.trim(),
+                            email: email.trim(),
+                            cpf: whatsapp.replace(/\D/g,''),
+                            valor: valor,
+                            descricao: `EvoCRM ${plano.nome} - ${this.billing === 'anual' ? 'Anual' : 'Mensal'}`,
+                            instancia: instancia.trim(),
+                            license_key: licenseKey,
+                        })
+                    });
+
+                    if (!res.ok) throw new Error('Erro ao gerar PIX. Tente novamente.');
+
+                    const data = await res.json();
+                    if (data.error) throw new Error(data.error);
+                    if (!data.pix_copia_cola) throw new Error('PIX não retornado pelo servidor.');
+
+                    // 3. Mostra o PIX na tela
+                    this.pixCopiaECola = data.pix_copia_cola;
+                    this.step = 'pix';
+
+                    // 4. Inicia contador de 30min
+                    this.iniciarContador(30 * 60);
+
+                    // 5. Inicia polling verificando pagamento no Supabase
+                    this.iniciarPolling(pedido.id, instancia.trim());
+
+                } catch(e) {
+                    this.erroMsg = e.message || 'Erro inesperado.';
+                    this.step = 'erro';
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            // ============================================================
+            // POLLING — verifica status no Supabase a cada 5s
+            // ============================================================
+            iniciarPolling(pedidoId, instancia) {
+                clearTimeout(this.pollTimer);
+                const check = async () => {
+                    try {
+                        const { data } = await this.sb
+                            .from('pagamentos')
+                            .select('status')
+                            .eq('id', pedidoId)
+                            .single();
+
+                        if (data?.status === 'approved') {
+                            clearTimeout(this.pollTimer);
+                            clearInterval(this.contadorTimer);
+                            await this.ativarLicenca(pedidoId, instancia);
+                            this.step = 'sucesso';
+                        } else if (data?.status === 'cancelled' || data?.status === 'rejected') {
+                            clearTimeout(this.pollTimer);
+                            this.erroMsg = 'PIX expirado ou cancelado.';
+                            this.step = 'erro';
+                        } else {
+                            this.pollTimer = setTimeout(check, 5000);
+                        }
+                    } catch(e) {
+                        this.pollTimer = setTimeout(check, 6000);
+                    }
+                };
+                this.pollTimer = setTimeout(check, 5000);
+            },
+
+            // ============================================================
+            // CONTADOR REGRESSIVO
+            // ============================================================
+            iniciarContador(segundos) {
+                clearInterval(this.contadorTimer);
+                let restante = segundos;
+                const atualizar = () => {
+                    const m = String(Math.floor(restante / 60)).padStart(2, '0');
+                    const s = String(restante % 60).padStart(2, '0');
+                    this.contadorPix = `${m}:${s}`;
+                    if (restante <= 0) {
+                        clearInterval(this.contadorTimer);
+                        if (this.step === 'pix') {
+                            clearTimeout(this.pollTimer);
+                            this.erroMsg = 'PIX expirado. Gere um novo.';
+                            this.step = 'erro';
+                        }
+                    }
+                    restante--;
+                };
+                atualizar();
+                this.contadorTimer = setInterval(atualizar, 1000);
+            },
+
+            // ============================================================
+            // COPIAR PIX
+            // ============================================================
+            async copiarPix() {
+                try {
+                    await navigator.clipboard.writeText(this.pixCopiaECola);
+                    this.pixCopiado = true;
+                    setTimeout(() => this.pixCopiado = false, 3000);
+                } catch(e) {
+                    // fallback para mobile
+                    const el = document.createElement('textarea');
+                    el.value = this.pixCopiaECola;
+                    document.body.appendChild(el);
+                    el.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(el);
+                    this.pixCopiado = true;
+                    setTimeout(() => this.pixCopiado = false, 3000);
+                }
+            },
+
+            // ============================================================
+            // ATIVAR LICENÇA
+            // ============================================================
+            async ativarLicenca(pedidoId, instancia) {
+                try {
+                    const { data: pag } = await this.sb.from('pagamentos').select('*').eq('id', pedidoId).single();
+                    if (!pag) return;
+
+                    const dias = pag.billing === 'anual' ? this.DIAS_ANUAL : this.DIAS_MENSAL;
+                    const expires = new Date();
+                    expires.setDate(expires.getDate() + dias);
+
+                    const planoMap = { starter: 'basico', pro: 'premium', enterprise: 'platinum' };
+
+                    await this.sb.from('licenses').upsert({
+                        instance_name: instancia,
+                        license_key: pag.license_key || ('LIC-' + Math.random().toString(36).substr(2,9).toUpperCase()),
+                        status: 'active',
+                        plano: planoMap[pag.plano] || 'basico',
+                        expires_at: expires.toISOString(),
+                        is_trial: false,
+                    }, { onConflict: 'instance_name' });
+
+                    await this.sb.from('pagamentos').update({ expires_at: expires.toISOString() }).eq('id', pedidoId);
+
+                } catch(e) {
+                    console.error('Erro ao ativar licença:', e);
+                }
+            },
+
+            fecharModal() {
+                this.modalAberto = false;
+                clearTimeout(this.pollTimer);
+                clearInterval(this.contadorTimer);
+            },
+
+            irParaConectar() {
+                window.location.href = this.CONECTAR_URL + '?i=' + this.form.instancia;
+            },
+
+            maskPhone(e) {
+                let v = e.target.value.replace(/\D/g, '');
+                if (v.length <= 2) v = v.replace(/^(\d{0,2})/, '($1');
+                else if (v.length <= 7) v = v.replace(/^(\d{2})(\d{0,5})/, '($1) $2');
+                else v = v.replace(/^(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3');
+                this.form.whatsapp = v;
+            },
+        }
+    }
+    </script>
+</body>
+</html>
